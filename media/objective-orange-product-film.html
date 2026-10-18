@@ -13,12 +13,26 @@
 </head>
 <body>
 <video
+  id="film"
   src="mitutoyo-objective-orange-product-film.mp4"
   autoplay
   muted
   loop
   playsinline
-  controls
+  webkit-playsinline
+  preload="auto"
 ></video>
+<script>
+  const v = document.getElementById("film");
+  v.muted = true;
+  v.loop = true;
+  v.playsInline = true;
+  const start = () => v.play().catch(() => {});
+  if (v.readyState >= 2) start();
+  else v.addEventListener("canplay", start, { once: true });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && v.paused) start();
+  });
+</script>
 </body>
 </html>
