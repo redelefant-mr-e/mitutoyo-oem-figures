@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hairline figure</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: light; --ground: #ffffff; --ink: #232327; --muted: #6f6f78; --line: #e0e0e4; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; --ground: #08090a; --ink: #d0d6e0; --muted: #8a8c95; --line: #29292d; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; --ground: #08090a; --ink: #d0d6e0; --muted: #8a8c95; --line: #29292d; }
+  :root[data-theme="light"] { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px;
+    background: var(--ground); color: var(--ink);
+    font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased;
+  }
+  main { width: 100%; max-width: 640px; }
+  .plate { position: relative; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .tag, .label, output, button { font: 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.02em; }
+  .tag { position: absolute; top: 12px; z-index: 1; color: var(--muted); pointer-events: none; }
+  #name { left: 14px; }
+  #read { right: 14px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 14px; }
+  .label { color: var(--muted); }
+  input[type="range"] {
+    flex: 1 1 96px; min-width: 0; height: 32px; margin: 0; background: transparent; cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+  }
+  input[type="range"]::-webkit-slider-runnable-track { height: 1px; background: var(--muted); }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; margin-top: -6px; border-radius: 50%;
+    border: 1px solid var(--ink); background: var(--ground);
+  }
+  input[type="range"]::-moz-range-track { height: 1px; background: var(--muted); }
+  input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--ink); background: var(--ground); }
+  input[type="range"]:focus-visible, button:focus-visible { outline: 1.5px solid var(--ink); outline-offset: 2px; }
+  output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+  button {
+    height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; color: var(--ink); cursor: pointer;
+  }
+  #play[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  #means { margin: 14px 0 0; text-wrap: pretty; }
+  #rules { margin: 6px 0 0; line-height: 1.6; }
+  #error { margin: 12px 0 0; padding-left: 10px; border-left: 1px solid var(--ink); }
+</style>
+<style data-oem-figures-style>:where([data-hairline]){--hairline-stroke:1.25}[data-hairline]>svg .sil{stroke-width:calc(var(--hl-sw) * 1.28)}[data-hairline]>svg .dot.logo{fill:var(--hairline-logo,var(--hl-hi))}:root[data-theme="light"] [data-hairline]{--hairline-plate:#ffffff;--hairline-hi:#f47836;--hairline-edge:#58595b;--hairline-mid:#808080;--hairline-lo:#bfbfbf;--hairline-logo:#000000}:root[data-theme="light"] [data-hairline]>svg .dash{stroke:#f47836}:root[data-theme="light"] [data-hairline]>svg .lo.dash{stroke:#fbc9af}:root[data-theme="light"] [data-hairline]>svg .dot.off{fill:#e6e6e6}@media (prefers-color-scheme: light){:root:not([data-theme]) [data-hairline]{--hairline-plate:#ffffff;--hairline-hi:#f47836;--hairline-edge:#58595b;--hairline-mid:#808080;--hairline-lo:#bfbfbf;--hairline-logo:#000000}:root:not([data-theme]) [data-hairline]>svg .dash{stroke:#f47836}:root:not([data-theme]) [data-hairline]>svg .lo.dash{stroke:#fbc9af}:root:not([data-theme]) [data-hairline]>svg .dot.off{fill:#e6e6e6}}</style>
+</head>
+<body>
+<main>
+  <div class="plate">
+    <span class="tag" id="name"></span>
+    <span class="tag" id="read"></span>
+    <div id="stage"></div>
+  </div>
+  <div class="controls">
+    <label class="label" for="intensity">intensity</label>
+    <input id="intensity" type="range" min="0" max="1" step="0.01" value="0.5">
+    <output id="value" for="intensity"></output>
+    <span class="label">theme</span>
+    <button id="theme" type="button" aria-label="Switch between the light and the dark theme"></button>
+    <span class="label">play</span>
+    <button id="play" type="button" aria-pressed="false">play</button>
+  </div>
+  <p id="means"></p>
+  <p id="rules" class="label"></p>
+  <p id="error" role="alert" hidden></p>
+</main>
+<script id="hl-kernel">
+/* hairline kernel sha256:346b48bdef2cdfafd5343eba01494255cf75f9c078e6fcd1aafc62bab62980a1 */
+/*
+ * HL: everything a figure may call. Read this index; the code under it is the
+ * package's src/core, unchanged, and a figure should not need to read it.
+ *
+ * Every figure is drawn in a 400 × 320 viewBox. World space is x/y on the
+ * ground and z up. Plates are filled with the ground colour and painted back
+ * to front, so a nearer one covers a farther one: append in that order. At
+ * the default camera, Cam(45, 0.5, S), +x runs down to the right and +y down
+ * to the left, so the corner with the largest x and y is nearest the viewer:
+ * append by ascending x + y, from the far corner (smallest x and y) to it.
+ *
+ * Camera
+ *   Cam(azDeg, k, S)                       a camera: azimuth in degrees, k = sin(elevation) (0.5 is the 2:1 view), S = scale
+ *   fit(C, points, cx, cy)                 centres the box of [x, y, z] points on (cx, cy); call it once, before proj
+ *                                          it only centres, it never scales: choose S by trying values, with the most extreme pose in points.
+ *                                          The six figures use S 1.42 to 2.12; the boxes they fit come out 230 to 310 wide and 180 to 245 tall
+ *   proj(C)                                returns P(x, y, z), which gives [sx, sy]
+ *   unproj(C, sx, sy, z)                   the world [x, y] under a screen point, on the plane at height z
+ *   facing(C)                              returns front(sample): whether a ring sample faces the camera
+ * Rounded solids
+ *   rrect(u0, v0, u1, v1, r, n)            a rounded rectangle, as a ring of samples {u, v, nu, nv}
+ *   circ(R, n)                             a circle, as a ring
+ *   rings(x0, y0, x1, y1, r, b)            [ring, inner]: a rounded footprint and its crease ring, inset by b
+ *                                          r, the corner radius, is cut to half the shorter side. b, the crease's inset in world units
+ *                                          (0.6 to 2.2 in the figures), must stay under half the shorter side or the crease turns inside out
+ *   prism(P, front, ring, inner, z0, z1)   {sil, crease}: a solid standing from z0 to z1, as two path strings
+ *   ringAt(P, ring, z)                     the ring's points, projected at height z
+ *   run(ring, keep)                        the one cyclic run of samples that pass keep
+ *   hull(points)                           the convex hull of screen points
+ *   extremes(P, ring)                      [left, right, nearest] samples: where dashed drops fall from
+ *   fillet(points, radii, n)               rounds every vertex of a closed polygon; returns the new points
+ *                                          radii is an array, one radius per vertex, each cut to half its shorter edge; a single number gives NaN.
+ *                                          n is the steps round each corner, default 4: each vertex becomes n + 1 points
+ *   ghost(P, front, ring, z0, depth)       a reflection's path {d, y0, y1}; reflect() draws it for you
+ * Paths and numbers
+ *   poly(points)                           a closed path string
+ *   open(points)                           an open polyline string
+ *   seg(a, b)                              one segment between two screen points [sx, sy], as its own subpath; project world points with P first
+ *   clamp(v, a, b)
+ *   lerp(a, b, t)
+ *   rad(deg)
+ *   r2(n)                                  two decimals
+ * The continuous clock: one spring per moving number
+ *   spring(x, opts)                        at rest on x; write .t to retarget; opts {k, c, m, eps}, default k 100, c 18, m 1
+ *   stepS(sp, dt)                          advances by dt seconds; returns whether it is still moving
+ * The discrete clock: a 700ms tween on (.32, .72, 0, 1)
+ *   tween(v, dur)                          at rest on v; dur defaults to 700 (ms)
+ *   tset(tw, to, now, delay)               retargets from where it is, after delay ms: the stagger
+ *                                          the same target again does nothing, so calling it on every pointer move is safe
+ *   tval(tw, now)                          its value at now
+ *   tdone(tw, now)                         whether it has landed
+ *   bezier(x1, y1, x2, y2)                 a CSS cubic-bezier, as a function of progress
+ *   EASE_LIFT                              the lift curve itself
+ *   reducedMotion()                        true when the reader asked for less motion; springs and tweens already land at once
+ *   setReducedMotion(on)                   the loop's business, not a figure's
+ * Drawing
+ *   mk(tag, attrs, parent)                 one svg element: the only way a figure makes a node
+ *   solid(parent)                          {g, sil, cr}: a group holding a silhouette path and a crease path
+ *   put(solid, paths)                      writes prism()'s {sil, crease} into solid()'s {sil, cr}: sil into sil, crease into cr
+ *   flatDot(parent, C, r, cls)             a dot lying on the ground plane; cls is "dot", "dot m" or "dot off"
+ *   place(el, point)                       moves a dot or a circle to [sx, sy]
+ *   reflect(svg, parent, P, front, ring, z0, depth)   a fading mirror under a solid
+ *   fade(svg, y0, y1, a0)                  a vertical fade, as a mask; returns the value for a mask attribute
+ * Life
+ *   register(stage, tick)                  joins the one frame loop; tick(dt in seconds, now in ms) returns true to ask for another frame; gives {wake, unregister}
+ *   pointer(stage, handlers)               {move(point), down(point), leave()}, points in viewBox units; returns its disposer
+ *   disposer()                             {add, on, dispose}: collects tear-down, so destroy is bag.dispose
+ * The bench's business, not a figure's
+ *   css(lightDark)
+ *   inject(root)
+ *   tour(stage, stops, onStop)             an unseen pointer that walks the stops, [x, y] in viewBox units or null to leave, and gives way to a real one; onStop(i) on each arrival; returns {stop}
+ *   LAP                                    the default stops: a diamond around the centre, then a leave
+ *
+ * Classes, on path, polygon, ellipse and line. They are the whole palette; a
+ * figure sets no colour, width or fill of its own.
+ *     (none)   filled with the ground colour, medium stroke
+ *     sil      the silhouette's stroke        hi    the bright stroke: the only highlight
+ *     lo       the dim stroke                 nf    no fill        fo   fill only, no stroke
+ *     dash     a dashed guide
+ *     dot      a bright dot                   dot m   a medium dot     dot off   a dim dot
+ */
+var HL = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // packages/hairline/src/core/kernel.ts
+  var kernel_exports = {};
+  __export(kernel_exports, {
+    Cam: () => Cam,
+    EASE_LIFT: () => EASE_LIFT,
+    LAP: () => LAP,
+    bezier: () => bezier,
+    circ: () => circ,
+    clamp: () => clamp,
+    css: () => css,
+    disposer: () => disposer,
+    extremes: () => extremes,
+    facing: () => facing,
+    fade: () => fade,
+    fillet: () => fillet,
+    fit: () => fit,
+    flatDot: () => flatDot,
+    ghost: () => ghost,
+    hull: () => hull,
+    inject: () => inject,
+    lerp: () => lerp,
+    mk: () => mk,
+    open: () => open,
+    place: () => place,
+    pointer: () => pointer,
+    poly: () => poly,
+    prism: () => prism,
+    proj: () => proj,
+    put: () => put,
+    r2: () => r2,
+    rad: () => rad,
+    reducedMotion: () => reducedMotion,
+    reflect: () => reflect,
+    register: () => register,
+    ringAt: () => ringAt,
+    rings: () => rings,
+    rrect: () => rrect,
+    run: () => run,
+    seg: () => seg,
+    setReducedMotion: () => setReducedMotion,
+    solid: () => solid,
+    spring: () => spring,
+    stepS: () => stepS,
+    tdone: () => tdone,
+    tour: () => tour,
+    tset: () => tset,
+    tval: () => tval,
+    tween: () => tween,
+    unproj: () => unproj
+  });
+
+  // packages/hairline/src/core/iso.ts
+  var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  var lerp = (a, b, t) => a + (b - a) * t;
+  var rad = (d) => d * Math.PI / 180;
+  var r2 = (n) => Math.round(n * 100) / 100;
+  var poly = (pts) => "M" + pts.map((p) => r2(p[0]) + " " + r2(p[1])).join("L") + "Z";
+  var seg = (a, b) => `M${r2(a[0])} ${r2(a[1])}L${r2(b[0])} ${r2(b[1])}`;
+  var open = (pts) => pts.length < 2 ? "" : "M" + pts.map((p) => r2(p[0]) + " " + r2(p[1])).join("L");
+  var Cam = (azDeg, k, S) => ({ az: rad(azDeg), k, S, ox: 0, oy: 0 });
+  function proj(C) {
+    const c = Math.cos(C.az), s = Math.sin(C.az), zf = Math.sqrt(1 - C.k * C.k);
+    return (x, y, z) => {
+      const X = x * c - y * s, Y = x * s + y * c;
+      return [C.ox + C.S * X, C.oy + C.S * (Y * C.k - z * zf)];
+    };
+  }
+  function unproj(C, sx, sy, z) {
+    const c = Math.cos(C.az), s = Math.sin(C.az), zf = Math.sqrt(1 - C.k * C.k);
+    const X = (sx - C.ox) / C.S, Y = ((sy - C.oy) / C.S + z * zf) / C.k;
+    return [X * c + Y * s, -X * s + Y * c];
+  }
+  function fit(C, pts, cx, cy) {
+    C.ox = 0;
+    C.oy = 0;
+    const P = proj(C);
+    let a = 1e9, b = -1e9, c = 1e9, d = -1e9;
+    for (const p of pts) {
+      const q = P(p[0], p[1], p[2]);
+      a = Math.min(a, q[0]);
+      b = Math.max(b, q[0]);
+      c = Math.min(c, q[1]);
+      d = Math.max(d, q[1]);
+    }
+    C.ox = cx - (a + b) / 2;
+    C.oy = cy - (c + d) / 2;
+  }
+  function rrect(u0, v0, u1, v1, r, n = 4) {
+    r = Math.max(0, Math.min(r, (u1 - u0) / 2, (v1 - v0) / 2));
+    const out = [];
+    for (const [cu, cv, a0] of [[u1 - r, v1 - r, 0], [u0 + r, v1 - r, 90], [u0 + r, v0 + r, 180], [u1 - r, v0 + r, 270]])
+      for (let k = 0; k <= n; k++) {
+        const a = rad(a0 + 90 * k / n), ca = Math.cos(a), sa = Math.sin(a);
+        out.push({ u: cu + r * ca, v: cv + r * sa, nu: ca, nv: sa });
+      }
+    return out;
+  }
+  function circ(R, n = 96) {
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      const a = k / n * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+      out.push({ u: R * ca, v: R * sa, nu: ca, nv: sa });
+    }
+    return out;
+  }
+  function hull(input) {
+    const pts = input.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const x = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const p of pts) {
+      while (lo.length > 1 && x(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop();
+      lo.push(p);
+    }
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (up.length > 1 && x(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop();
+      up.push(p);
+    }
+    lo.pop();
+    up.pop();
+    return lo.concat(up);
+  }
+  var ringAt = (P, ring, z) => ring.map((q) => P(q.u, q.v, z));
+  var facing = (C) => {
+    const s = Math.sin(C.az), c = Math.cos(C.az);
+    return (q) => q.nu * s + q.nv * c >= -1e-6;
+  };
+  function run(ring, keep) {
+    const n = ring.length;
+    let s = -1;
+    for (let i = 0; i < n; i++) if (keep(ring[i]) && !keep(ring[(i + n - 1) % n])) {
+      s = i;
+      break;
+    }
+    if (s < 0) return keep(ring[0]) ? ring.slice() : [];
+    const out = [];
+    for (let k = 0; k < n && keep(ring[(s + k) % n]); k++) out.push(ring[(s + k) % n]);
+    return out;
+  }
+  function prism(P, front, ring, inner, z0, z1) {
+    return {
+      sil: poly(hull(ringAt(P, ring, z1).concat(ringAt(P, ring, z0)))),
+      crease: inner ? open(ringAt(P, run(inner, front), z1)) : ""
+    };
+  }
+  var rings = (x0, y0, x1, y1, r, b) => [
+    rrect(x0, y0, x1, y1, r),
+    rrect(x0 + b, y0 + b, x1 - b, y1 - b, Math.max(0.3, r - b))
+  ];
+  function extremes(P, ring) {
+    const pr = ring.map((q) => P(q.u, q.v, 0));
+    let a = 0, b = 0, c = 0;
+    pr.forEach((p, k) => {
+      if (p[0] < pr[a][0]) a = k;
+      if (p[0] > pr[b][0]) b = k;
+      if (p[1] > pr[c][1]) c = k;
+    });
+    return [ring[a], ring[b], ring[c]];
+  }
+  function fillet(pts, rs, n = 4) {
+    const m = pts.length, out = [];
+    for (let i = 0; i < m; i++) {
+      const a = pts[(i + m - 1) % m], p = pts[i], b = pts[(i + 1) % m];
+      const la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+      const t = Math.min(rs[i], la / 2, lb / 2);
+      const p1 = [p[0] + (a[0] - p[0]) / la * t, p[1] + (a[1] - p[1]) / la * t];
+      const p2 = [p[0] + (b[0] - p[0]) / lb * t, p[1] + (b[1] - p[1]) / lb * t];
+      for (let k = 0; k <= n; k++) {
+        const s = k / n, w = 1 - s;
+        out.push([w * w * p1[0] + 2 * w * s * p[0] + s * s * p2[0], w * w * p1[1] + 2 * w * s * p[1] + s * s * p2[1]]);
+      }
+    }
+    return out;
+  }
+  function ghost(P, front, ring, z0, depth) {
+    const f = run(ring, front), lowP = ringAt(P, f, z0 - depth);
+    return {
+      d: open(lowP) + [f[0], f[f.length - 1]].map((q) => seg(P(q.u, q.v, z0), P(q.u, q.v, z0 - depth))).join(""),
+      y0: Math.min(...ringAt(P, f, z0).map((p) => p[1])),
+      y1: Math.max(...lowP.map((p) => p[1])) + 2
+    };
+  }
+
+  // packages/hairline/src/core/motion.ts
+  var reduced = false;
+  var setReducedMotion = (on) => {
+    reduced = on;
+  };
+  var reducedMotion = () => reduced;
+  function spring(x, o = {}) {
+    return { x, v: 0, t: x, k: o.k ?? 100, c: o.c ?? 18, m: o.m ?? 1, eps: o.eps ?? 0.01 };
+  }
+  function stepS(sp, dt) {
+    if (reduced) {
+      sp.x = sp.t;
+      sp.v = 0;
+      return false;
+    }
+    const n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const a = (-sp.k * (sp.x - sp.t) - sp.c * sp.v) / sp.m;
+      sp.v += a * h;
+      sp.x += sp.v * h;
+    }
+    if (Math.abs(sp.x - sp.t) < sp.eps && Math.abs(sp.v) < sp.eps * 10) {
+      sp.x = sp.t;
+      sp.v = 0;
+      return false;
+    }
+    return true;
+  }
+  function bezier(x1, y1, x2, y2) {
+    const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+    const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+    const X = (u) => ((ax * u + bx) * u + cx) * u;
+    const Y = (u) => ((ay * u + by) * u + cy) * u;
+    const dX = (u) => (3 * ax * u + 2 * bx) * u + cx;
+    return (t) => {
+      if (t <= 0) return 0;
+      if (t >= 1) return 1;
+      let u = t;
+      for (let i = 0; i < 8; i++) {
+        const e = X(u) - t;
+        if (Math.abs(e) < 1e-5) break;
+        const d = dX(u);
+        if (Math.abs(d) < 1e-6) break;
+        u -= e / d;
+      }
+      if (!(u >= 0 && u <= 1) || Math.abs(X(u) - t) > 1e-4) {
+        let lo = 0, hi = 1;
+        u = t;
+        for (let i = 0; i < 24; i++) {
+          if (X(u) < t) lo = u;
+          else hi = u;
+          u = (lo + hi) / 2;
+        }
+      }
+      return Y(u);
+    };
+  }
+  var EASE_LIFT = bezier(0.32, 0.72, 0, 1);
+  var tween = (v, dur = 700) => ({ from: v, to: v, t0: -1e9, dur });
+  var tval = (tw, now) => {
+    const p = clamp((now - tw.t0) / tw.dur, 0, 1);
+    return tw.from + (tw.to - tw.from) * (reduced ? 1 : EASE_LIFT(p));
+  };
+  var tset = (tw, to, now, delay) => {
+    if (tw.to === to) return;
+    tw.from = tval(tw, now);
+    tw.to = to;
+    tw.t0 = now + delay;
+  };
+  var tdone = (tw, now) => reduced || now >= tw.t0 + tw.dur;
+
+  // packages/hairline/src/core/stage.ts
+  var NS = "http://www.w3.org/2000/svg";
+  function mk(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    if (attrs) for (const k in attrs) e.setAttribute(k, String(attrs[k]));
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function solid(parent) {
+    const g = mk("g", {}, parent);
+    return { g, sil: mk("path", { class: "sil" }, g), cr: mk("path", { class: "nf lo" }, g) };
+  }
+  var put = (el, s) => {
+    el.sil.setAttribute("d", s.sil);
+    el.cr.setAttribute("d", s.crease);
+  };
+  var flatDot = (parent, C, r, cls) => mk("ellipse", { rx: r2(r * C.S), ry: r2(r * C.S * C.k), class: cls }, parent);
+  var place = (el, q) => {
+    el.setAttribute("cx", String(r2(q[0])));
+    el.setAttribute("cy", String(r2(q[1])));
+  };
+  var fid = 0;
+  function fade(svg, y0, y1, a0 = 0.7) {
+    const id = "hl-fd" + ++fid, defs = mk("defs", {}, svg);
+    const lg = mk("linearGradient", { id: id + "g", gradientUnits: "userSpaceOnUse", x1: 0, y1: r2(y0), x2: 0, y2: r2(y1) }, defs);
+    mk("stop", { offset: 0, "stop-color": "#fff", "stop-opacity": a0 }, lg);
+    mk("stop", { offset: 1, "stop-color": "#fff", "stop-opacity": 0 }, lg);
+    const m = mk("mask", { id, maskUnits: "userSpaceOnUse", x: 0, y: 0, width: 400, height: 320 }, defs);
+    mk("rect", { x: 0, y: 0, width: 400, height: 320, fill: `url(#${id}g)` }, m);
+    return `url(#${id})`;
+  }
+  function reflect(svg, parent, P, front, ring, z0, depth) {
+    const r = ghost(P, front, ring, z0, depth);
+    const gh = mk("g", { class: "ghost", mask: fade(svg, r.y0, r.y1) }, parent);
+    mk("path", { d: r.d }, gh);
+  }
+  var boards = [];
+  var byStage = /* @__PURE__ */ new Map();
+  var raf = 0;
+  var last = 0;
+  var io = null;
+  var rm = null;
+  function frame() {
+    const now = performance.now();
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1e3));
+    last = now;
+    let any = false;
+    for (const b of boards.slice()) if (b.vis && b.awake) {
+      try {
+        b.awake = !!b.tick(dt, now);
+      } catch (err) {
+        b.awake = false;
+        setTimeout(() => {
+          throw err;
+        });
+      }
+      any = any || b.awake;
+    }
+    raf = any ? requestAnimationFrame(frame) : 0;
+  }
+  function wake(b) {
+    b.awake = true;
+    if (!raf) {
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    }
+  }
+  var onMotion = () => {
+    setReducedMotion(!!rm?.matches);
+    boards.forEach(wake);
+  };
+  function start() {
+    if (io) return;
+    io = new IntersectionObserver((es) => {
+      for (const e of es) {
+        const set = byStage.get(e.target);
+        if (!set) continue;
+        for (const b of set) {
+          b.vis = e.isIntersecting;
+          if (b.vis) wake(b);
+        }
+      }
+    }, { rootMargin: "80px" });
+    rm = matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(rm.matches);
+    rm.addEventListener("change", onMotion);
+  }
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    io?.disconnect();
+    io = null;
+    rm?.removeEventListener("change", onMotion);
+    rm = null;
+  }
+  function register(stage, tick) {
+    start();
+    const b = { stage, tick, vis: false, awake: true };
+    boards.push(b);
+    const peers = byStage.get(stage);
+    if (peers) {
+      for (const p of peers) b.vis = p.vis;
+      peers.add(b);
+      if (b.vis) wake(b);
+    } else {
+      byStage.set(stage, /* @__PURE__ */ new Set([b]));
+      io.observe(stage);
+    }
+    tick(0, performance.now());
+    let gone = false;
+    return {
+      wake: () => {
+        if (!gone) wake(b);
+      },
+      unregister: () => {
+        if (gone) return;
+        gone = true;
+        boards = boards.filter((x) => x !== b);
+        const set = byStage.get(stage);
+        if (set) {
+          set.delete(b);
+          if (!set.size) {
+            byStage.delete(stage);
+            io?.unobserve(stage);
+          }
+        }
+        if (!boards.length) stop();
+      }
+    };
+  }
+  var handlers = /* @__PURE__ */ new WeakMap();
+  var touring = /* @__PURE__ */ new WeakMap();
+  function pointer(stage, on) {
+    handlers.set(stage, on);
+    let tm = 0;
+    const pt = (e) => {
+      const r = stage.getBoundingClientRect();
+      return [(e.clientX - r.left) / r.width * 400, (e.clientY - r.top) / r.height * 320];
+    };
+    const move = (e) => {
+      clearTimeout(tm);
+      touring.get(stage)?.hold();
+      on.move(pt(e), e);
+    };
+    const down = (e) => {
+      clearTimeout(tm);
+      touring.get(stage)?.hold();
+      if (e.pointerType !== "mouse") stage.releasePointerCapture?.(e.pointerId);
+      if (on.down) on.down(pt(e), e);
+      else on.move(pt(e), e);
+    };
+    const leave = (e) => {
+      clearTimeout(tm);
+      tm = window.setTimeout(() => {
+        on.leave(e);
+        touring.get(stage)?.release();
+      }, e.pointerType === "mouse" ? 0 : 1400);
+    };
+    stage.addEventListener("pointermove", move);
+    stage.addEventListener("pointerdown", down);
+    stage.addEventListener("pointerleave", leave);
+    return () => {
+      clearTimeout(tm);
+      if (handlers.get(stage) === on) handlers.delete(stage);
+      stage.removeEventListener("pointermove", move);
+      stage.removeEventListener("pointerdown", down);
+      stage.removeEventListener("pointerleave", leave);
+    };
+  }
+  var LAP = [[128, 150], [200, 118], [272, 150], [200, 206], null];
+  var TRAVEL = 900;
+  var DWELL = 1200;
+  var REST = 1800;
+  var RESUME = 1200;
+  var STAGGER = 450;
+  var GHOST = { pointerType: "ghost" };
+  var started = 0;
+  function entry([x, y]) {
+    const dx = x - 200, dy = y - 160;
+    if (!dx && !dy) return [200, 320];
+    const k = Math.min(dx ? (dx > 0 ? 200 : -200) / dx : Infinity, dy ? (dy > 0 ? 160 : -160) / dy : Infinity);
+    return [200 + dx * k, 160 + dy * k];
+  }
+  function tour(stage, stops, onStop) {
+    let i = 0;
+    let wait = RESUME + STAGGER * (started++ % 4);
+    let t = -1;
+    let at = null;
+    let origin = [200, 320];
+    let hand = false, keys = stage.contains(stage.ownerDocument.activeElement);
+    let gone = false;
+    const leave = () => {
+      at = null;
+      t = -1;
+      handlers.get(stage)?.leave(GHOST);
+    };
+    const tick = (dt) => {
+      if (hand || keys || !stops.length) return false;
+      if (reducedMotion()) {
+        if (at) leave();
+        return false;
+      }
+      if (wait > 0) {
+        wait -= dt * 1e3;
+        return true;
+      }
+      const stop2 = stops[i];
+      if (stop2 === null) {
+        if (at) leave();
+        onStop?.(i);
+        i = (i + 1) % stops.length;
+        wait = REST;
+        return true;
+      }
+      const h = handlers.get(stage);
+      if (!h) return true;
+      if (t < 0) {
+        origin = at ?? entry(stop2);
+        t = 0;
+      }
+      t = Math.min(TRAVEL, t + dt * 1e3);
+      const k = EASE_LIFT(t / TRAVEL);
+      at = [origin[0] + (stop2[0] - origin[0]) * k, origin[1] + (stop2[1] - origin[1]) * k];
+      h.move(at, GHOST);
+      if (t < TRAVEL) return true;
+      onStop?.(i);
+      i = (i + 1) % stops.length;
+      t = -1;
+      wait = DWELL;
+      return true;
+    };
+    const take = () => {
+      at = null;
+      t = -1;
+    };
+    const give = () => {
+      if (hand || keys) return;
+      i = 0;
+      t = -1;
+      wait = RESUME;
+      board.wake();
+    };
+    const me = {
+      hold: () => {
+        hand = true;
+        take();
+      },
+      release: () => {
+        if (!hand) return;
+        hand = false;
+        give();
+      }
+    };
+    const focusIn = () => {
+      keys = true;
+      take();
+    };
+    const focusOut = (e) => {
+      if (keys && !stage.contains(e.relatedTarget)) {
+        keys = false;
+        give();
+      }
+    };
+    stage.addEventListener("focusin", focusIn);
+    stage.addEventListener("focusout", focusOut);
+    touring.set(stage, me);
+    const board = register(stage, tick);
+    return {
+      stop: () => {
+        if (gone) return;
+        gone = true;
+        board.unregister();
+        stage.removeEventListener("focusin", focusIn);
+        stage.removeEventListener("focusout", focusOut);
+        if (touring.get(stage) === me) touring.delete(stage);
+        if (at) leave();
+      }
+    };
+  }
+  function disposer() {
+    let fns = [];
+    return {
+      add: (fn) => {
+        fns.push(fn);
+      },
+      on: (target, type, fn, opts) => {
+        const h = fn;
+        target.addEventListener(type, h, opts);
+        fns.push(() => target.removeEventListener(type, h, opts));
+      },
+      dispose: () => {
+        const run2 = fns;
+        fns = [];
+        for (let i = run2.length - 1; i >= 0; i--) run2[i]();
+      }
+    };
+  }
+
+  // packages/hairline/src/core/styles.ts
+  var LIGHT = { plate: "#ffffff", hi: "#232327", edge: "#a4a4ac", mid: "#c3c3c9", lo: "#e0e0e4" };
+  var DARK = { plate: "#08090a", hi: "#d0d6e0", edge: "#5b5d64", mid: "#3e3e44", lo: "#29292d" };
+  var KEYS = ["plate", "hi", "edge", "mid", "lo"];
+  var vars = (p) => KEYS.map((k) => `--hl-${k}:var(--hairline-${k},${p[k]});`).join("");
+  var EASE = "cubic-bezier(0.5,0,0.1,1)";
+  var SVG = ":where([data-hairline]>svg)";
+  function css(lightDark) {
+    const both = Object.fromEntries(KEYS.map((k) => [k, `light-dark(${LIGHT[k]},${DARK[k]})`]));
+    return [
+      // the box, and the palette: light unless something below says otherwise
+      `:where([data-hairline]){display:block;position:relative;aspect-ratio:5/4;touch-action:pan-y;user-select:none;-webkit-user-select:none;--hl-sw:var(--hairline-stroke,0.9);${vars(LIGHT)}}`,
+      // the page's color-scheme
+      lightDark ? `:where([data-hairline]){${vars(both)}}` : "",
+      // an ancestor that says dark
+      `:where(.dark,[data-theme="dark"]) :where([data-hairline]){${vars(DARK)}}`,
+      // the figure's own theme option
+      `:where([data-hairline][data-hairline-theme="light"]){${vars(LIGHT)}}`,
+      `:where([data-hairline][data-hairline-theme="dark"]){${vars(DARK)}}`,
+      `:where([data-hairline]:focus-visible){outline:1.5px solid var(--hl-hi);outline-offset:2px}`,
+      `${SVG}{position:absolute;inset:0;width:100%;height:100%;display:block}`,
+      // Riffle's live region: read, not seen
+      `:where([data-hairline]>[data-hairline-live]){position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}`,
+      // the drawing: plates are filled with the plate colour and painted back to front
+      `${SVG} :where(path,polygon,ellipse,line){fill:var(--hl-plate);stroke:var(--hl-mid);stroke-width:var(--hl-sw);vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round;transition:stroke 260ms ${EASE}}`,
+      `${SVG} :where(.nf){fill:none}`,
+      `${SVG} :where(.fo){stroke:none}`,
+      `${SVG} :where(.sil){stroke:var(--hl-edge)}`,
+      `${SVG} :where(.hi){stroke:var(--hl-hi)}`,
+      `${SVG} :where(.lo){stroke:var(--hl-lo)}`,
+      `${SVG} :where(.dash){stroke-dasharray:1 3}`,
+      `${SVG} :where(.dot){stroke:none;fill:var(--hl-hi);transition:fill 260ms ${EASE}}`,
+      `${SVG} :where(.dot.m){fill:var(--hl-edge)}`,
+      `${SVG} :where(.dot.off){fill:var(--hl-lo)}`,
+      `${SVG} :where(.ghost path){fill:none;stroke:var(--hl-mid)}`
+    ].join("");
+  }
+  var done = /* @__PURE__ */ new WeakSet();
+  function inject(root) {
+    if (done.has(root)) return;
+    done.add(root);
+    const doc = root.nodeType === 9 ? root : root.ownerDocument;
+    const win = doc.defaultView;
+    const text = css(!!win?.CSS?.supports?.("color", "light-dark(#000,#fff)"));
+    if (win && "adoptedStyleSheets" in root) {
+      try {
+        const sheet = new win.CSSStyleSheet();
+        sheet.replaceSync(text);
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+        return;
+      } catch {
+      }
+    }
+    const style = doc.createElement("style");
+    style.setAttribute("data-hairline-style", "");
+    style.textContent = text;
+    (root.nodeType === 9 ? doc.head ?? doc.documentElement : root).appendChild(style);
+  }
+  return __toCommonJS(kernel_exports);
+})();
+/* /hairline kernel */
+</script>
+<script id="hl-bench">
+/*
+ * The bench: the page a figure is shown on. It makes the host and the svg the
+ * way the package's mount does, hands them to the figure, and owns everything
+ * around it: the read-out, the slider, the theme, the line under the stage.
+ */
+(() => {
+  const RULES = ["hit", "order", "reach", "accent", "rest", "honesty", "cost", "clock", "radius", "quiet"];
+  const $ = (id) => document.getElementById(id);
+  const root = document.documentElement, params = new URLSearchParams(location.search);
+
+  /* the theme: the system's until the switch is pressed, then the switch's */
+  const dark = () => (root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches);
+  const label = () => { $("theme").textContent = dark() ? "dark" : "light"; };
+  $("theme").addEventListener("click", () => { root.dataset.theme = dark() ? "light" : "dark"; label(); });
+  /* ?theme=light or ?theme=dark wins over the system's, as pressing the switch does */
+  if (["light", "dark"].includes(params.get("theme"))) root.dataset.theme = params.get("theme");
+  label();
+
+  /* ?intensity=0 sets the slider before the figure mounts, for a look at either end */
+  const i = (params.get("intensity") || "").trim();
+  if (i && Number.isFinite(Number(i))) $("intensity").value = String(Math.min(1, Math.max(0, Number(i))));
+
+  /* ?w=240 narrows the page, for a look at the size of a thumbnail */
+  const w = Number(params.get("w"));
+  if (w > 0) document.querySelector("main").style.maxWidth = w + "px";
+
+  /* a figure that fails says so under the stage, instead of leaving an empty plate */
+  addEventListener("error", (e) => {
+    $("error").hidden = false;
+    $("error").textContent = String((e.error && e.error.message) || e.message);
+  });
+
+  let mounted = false;
+  window.hairline = (figure) => {
+    if (mounted) throw new Error("hairline: one figure per page.");
+    mounted = true;
+    const stage = $("stage"), slider = $("intensity");
+
+    /* intensity to the figure's own number: two straight lines that meet at 0.5, as in the package */
+    const [lo, mid, hi] = figure.range;
+    const at = (i) => Math.round((i <= 0.5 ? lo + (i / 0.5) * (mid - lo) : mid + ((i - 0.5) / 0.5) * (hi - mid)) * 1000) / 1000;
+
+    HL.inject(document);
+    stage.setAttribute("data-hairline", figure.name);
+    stage.setAttribute("role", "img");
+    stage.setAttribute("aria-label", figure.means);
+    const svg = HL.mk("svg", { viewBox: "0 0 400 320", "aria-hidden": "true" }, stage);
+
+    let text = null;
+    const read = {
+      get textContent() { return text; },
+      set textContent(value) { text = value == null ? "" : String(value); $("read").textContent = text; },
+    };
+
+    document.title = "Hairline · " + figure.name;
+    $("name").textContent = figure.name;
+    $("means").textContent = figure.means;
+    $("rules").textContent = figure.rules.map((n) => String(n).padStart(2, "0") + " " + RULES[n - 1]).join(" · ");
+    const show = () => { $("value").textContent = String(at(Number(slider.value))); };
+    show();
+
+    const handle = figure.mount({ stage, svg, read }, at(Number(slider.value)));
+    if (text === null) read.textContent = "rest";
+    slider.addEventListener("input", () => { show(); handle.set(at(Number(slider.value))); });
+    window.hairline.figure = handle;
+
+    /* play: an unseen pointer walks the figure's tour (or HL.LAP) until a hand arrives; ?play=1 starts it on load */
+    const play = $("play");
+    window.hairline.playing = null;
+    play.addEventListener("click", () => {
+      const was = play.getAttribute("aria-pressed") === "true";
+      if (was) { window.hairline.playing.stop(); window.hairline.playing = null; }
+      else window.hairline.playing = HL.tour(stage, figure.tour || HL.LAP, (i) => { if (window.hairline.onStop) window.hairline.onStop(i); });
+      play.setAttribute("aria-pressed", String(!was));
+    });
+    if (params.get("play") === "1") play.click();
+
+    /* ?at=200,160 holds the pointer at a viewBox point, for a picture of the answer without a mouse */
+    const p = (params.get("at") || "").split(",").map(Number);
+    if (p.length === 2 && p.every(Number.isFinite)) {
+      const r = stage.getBoundingClientRect();
+      stage.dispatchEvent(new PointerEvent("pointermove", {
+        pointerType: "mouse", pointerId: 1, bubbles: true,
+        clientX: r.left + (p[0] / 400) * r.width, clientY: r.top + (p[1] / 320) * r.height,
+      }));
+    }
+  };
+})();
+</script>
+<script type="module" id="hl-figure">
+/**
+ * Line laser: a sensor floats over a panel with a glue bead; a fan of laser rays from the notch in its underside
+ * draws one bright line that humps over the bead, seen by the camera behind the sloped underside. The pointer
+ * slides the panel; passed profiles stay as dim slices, and a slice through the bead's gap lies flat.
+ * The slider is how many slices are measured.
+ * Parts (brief): sensor (rounded box, flat underneath, ramping up to a notch, then a short end section; wordmark),
+ * workpiece (a panel with an S-curved glue bead, one stretch missing).
+ */
+const { Cam, clamp, facing, fit, hull, open, poly, prism, proj, ringAt, rings, run, spring, stepS,
+  mk, pointer, put, register, disposer, solid } = HL;
+
+const W = 44, DP = 24, H = 32, RC = 4;              // sensor: width, depth, height, corner radius
+// The side profile's underside, [x / W from the left end, height / H]: flat, ramp, notch top, steep face, end section.
+const PR = [[0, 0], [0.4, 0], [0.7, 0.24], [0.73, 0.24], [0.78, 0.17], [1, 0.17]];
+const px = (f) => -W / 2 + f * W;
+const XL = px(0.715);                               // the laser plane x, through the notch top
+const CL = 22, CW = 15, CT = 3;                     // carrier half length, half width, thickness
+// Two glue beads side by side, each an S along the panel at offset o, each with its own gap; the runs are [x0, x1, o].
+const BR = 2.6, AMP = 2, OFF = [-5, 5], GAPS = [[-12, -7], [5, 8.5]], E = 1;   // E: lines stop at the panel's crease
+const BEAD = OFF.flatMap((o, i) => [[-19, GAPS[i][0], o], [GAPS[i][1], 19, o]]), yc = (x, o) => o + AMP * Math.sin(Math.PI * x / 19);
+const Z0 = CT + H;                                  // the sensor's underside: one box height above the carrier
+const EM = [XL, 0, Z0 + 0.24 * H], CAM = [px(0.55), 0, Z0 + 0.12 * H];   // laser exit, camera window on the ramp
+const UREST = XL - 1, UMIN = XL - CL, UMAX = XL + CL;
+const LW = 42, RAYS = 9;                            // the set's wordmark length in viewBox units; dotted rays in the fan
+// The Mitutoyo wordmark (design system, 900 x 225), on the front face, 0.15 H under the top, ending 0.14 W from the end that reads as left once mirrored.
+const LOGO = "M313.7 66.9V135.3C313.7 139.5 315.3 143.5 318.3 146.4C321.2 149.4 325.3 151 329.4 151H350.9V174.5H317.6C308.3 174.5 299.3 170.8 292.7 164.2C286.1 157.6 282.4 148.7 282.4 139.4V0H313.6V43.9H347.2V66.9H313.7ZM846 152.4C862.7 152.4 868.7 144.7 868.7 109.2C868.7 73.7 862.7 66 846 66C829.2 66 823.2 73.7 823.2 109.2C823.2 144.7 829.2 152.4 846 152.4ZM791.9 109.2C791.9 61.6 806.1 40.7 846 40.7C885.8 40.7 900 61.6 900 109.2C900 156.8 885.8 177.7 846 177.7C806.1 177.7 791.9 156.8 791.9 109.2ZM792.3 43.9L717.3 225H704.1L779 43.9H792.3ZM691.7 43.9L721.3 121.3L753.3 43.9H766.5L691.6 225H678.4L703.9 163.3L658.2 43.9L691.7 43.9ZM605.3 152.4C622.1 152.4 628.1 144.7 628.1 109.2C628.1 73.7 622.1 66 605.3 66C588.5 66 582.5 73.7 582.5 109.2C582.5 144.7 588.5 152.4 605.3 152.4ZM551.2 109.2C551.2 61.6 565.4 40.7 605.3 40.7C645.1 40.7 659.3 61.6 659.3 109.2C659.3 156.8 645.1 177.7 605.3 177.7C565.4 177.7 551.2 156.8 551.2 109.2ZM427.1 43.9H458.4V174.5H395.9C386.6 174.5 377.6 170.8 371 164.2C364.4 157.6 360.7 148.7 360.7 139.4V43.9H392V135.3C392 139.5 393.6 143.5 396.6 146.4C399.5 149.4 403.6 151 407.7 151H427.1V43.9L427.1 43.9ZM507.9 66.9V135.3C507.9 139.5 509.5 143.5 512.5 146.4C515.4 149.4 519.4 151 523.6 151H545.1V174.5H511.8C502.5 174.5 493.5 170.8 486.9 164.2C480.3 157.6 476.6 148.7 476.6 139.4V0H507.8V43.9H541.3V66.9H507.9ZM232.3 29.7V0H263.6V29.7H232.3ZM232.3 174.5V43.9H263.6V174.5L232.3 174.5ZM108.5 174.5L186 0H212.2V174.5H168.1V74.8L123.9 174.5L108.5 174.5ZM53 0L104.2 117.1L156.3 0H171.7L94.2 174.5H88.1L44.1 73.9V174.5H0V0L53 0Z";
+const VIEW = [0.6124, 0.6124, 0.5];                 // the direction toward the camera (azimuth 45, k 0.5)
+
+/** The underside's height at x, from the profile. */
+function under(x) {
+  const f = Math.min(1, Math.max(0, (x + W / 2) / W)), k = Math.max(1, PR.findIndex(([f1]) => f1 >= f));
+  const [[f0, h0], [f1, h1]] = [PR[k - 1], PR[k]];
+  return H * (f1 > f0 ? h0 + (h1 - h0) * (f - f0) / (f1 - f0) : h1);
+}
+
+/** The sensor's outline: the visible underside run at profile heights, up the near end, round the top's back. */
+function outline(P, front, ring) {
+  const n = ring.length, s = ring.findIndex((q, i) => front(q) && !front(ring[(i + n - 1) % n]));
+  let L = 0;
+  while (L < n && front(ring[(s + L) % n])) L++;
+  const pts = [];
+  for (let k = 0; k < L; k++) {
+    const q = ring[(s + k) % n], r = ring[(s + k + 1) % n];
+    pts.push(P(q.u, q.v, Z0 + under(q.u)));
+    if (k < L - 1 && Math.abs(q.v - DP / 2) < 1e-6 && Math.abs(r.v - DP / 2) < 1e-6)
+      for (const [f, h] of PR.slice().reverse()) if (px(f) < q.u && px(f) > r.u) pts.push(P(px(f), DP / 2, Z0 + h * H));
+  }
+  for (let k = L - 1; k <= n; k++) { const q = ring[(s + k) % n]; pts.push(P(q.u, q.v, Z0 + H)); }
+  return poly(pts);
+}
+
+/** The sensor as thin columns under its profile, [x0, x1, y0, y1, z0, z1], for hiding rays behind it. */
+const SENSOR = Array.from({ length: 44 }, (_, i) => [px(i / 44), px((i + 1) / 44)]).map(([x0, x1]) =>
+  [x0, x1, -DP / 2, DP / 2, Z0 + Math.min(under(x0), under(x1), under((x0 + x1) / 2)), Z0 + H]);
+
+/** Whether the way from p toward the camera passes through one of the boxes. */
+const hidden = (p, boxes) => boxes.some((b) => {
+  let t0 = 1e-3, t1 = 1e9;
+  for (let a = 0; a < 3; a++) {
+    const lo = (b[2 * a] - p[a]) / VIEW[a], hi = (b[2 * a + 1] - p[a]) / VIEW[a];
+    t0 = Math.max(t0, Math.min(lo, hi));
+    t1 = Math.min(t1, Math.max(lo, hi));
+  }
+  return t0 < t1;
+});
+
+/** The bead's height over the panel at (x, y) in the panel's frame: its centre line swept by a ball of radius BR. */
+function bead(x, y) {
+  return BEAD.reduce((h, [a, b, o]) => {
+    const e = Math.min(b - BR, Math.max(a + BR, x)), sl = AMP * Math.PI / 19 * Math.cos(Math.PI * e / 19);
+    const d = e === x ? Math.abs(y - yc(x, o)) / Math.hypot(1, sl) : Math.hypot(x - e, y - yc(e, o));
+    return d < BR ? Math.max(h, Math.sqrt(BR * BR - d * d)) : h;
+  }, 0);
+}
+
+/** Whether the way from p (world, panel at ux) toward the camera passes through the bead. */
+function underBead(p, ux) {
+  for (let t = 0.05; t < 2.2 * BR / VIEW[2]; t += 0.12) {
+    const q = [p[0] + t * VIEW[0], p[1] + t * VIEW[1], p[2] + t * VIEW[2]];
+    if (q[2] < CT + bead(q[0] - ux, q[1]) - 1e-3) return true;
+  }
+  return false;
+}
+
+function mount({ stage, svg, read }, value) {
+  const bag = disposer();
+  let slices = Math.round(value), over = false, lo = Infinity, hi = -Infinity;
+
+  const C = Cam(45, 0.5, 3.05);
+  fit(C, [[UMIN - CL, -CW, 0], [UMIN - CL, CW, 0], [UMAX + CL, -CW, 0], [UMAX + CL, CW, 0],
+    [-W / 2, -DP / 2, Z0 + H], [W / 2, DP / 2, Z0 + H], [W / 2, -DP / 2, Z0 + H]], 200, 160);
+  const P = proj(C), front = facing(C), at = (p) => P(...p).join(",");
+  const g = mk("g", { transform: "matrix(-1 0 0 1 400 0)" }, svg);   // mirrored, so the wordmark face looks lower right as in the set
+
+  // The workpiece: the panel, the beads' runs, then the recorded slices and the live line over them.
+  const work = mk("g", {}, g), carrier = solid(work), runs = BEAD.map(() => solid(work));
+  const trail = mk("path", { class: "nf lo" }, work), line = mk("path", { class: "nf hi" }, work);
+
+  // The light: a fan of rays from the laser exit across the part, and the camera's ray back from the line.
+  const fan = mk("path", { class: "nf dash" }, g), ray = mk("path", { class: "nf lo dash" }, g);
+
+  // The sensor: one outline following the side profile, the top's crease, the near corner's edge, and the wordmark.
+  const [sr, si] = rings(-W / 2, -DP / 2, W / 2, DP / 2, RC, 1.2);
+  const top = Z0 + H, cu = W / 2 - RC * (1 - Math.SQRT1_2), cv = DP / 2 - RC * (1 - Math.SQRT1_2), ci = (RC - 1.2) * Math.SQRT1_2;
+  put(solid(g), { sil: outline(P, front, sr), crease: open(ringAt(P, run(si, front), top)) });
+  mk("path", { d: `M${at([W / 2 - RC + ci, DP / 2 - RC + ci, top])}L${at([cu, cv, Z0 + under(cu)])}`, class: "nf lo" }, g);
+  const LX0 = px(0.86) - LW / (C.S * 0.79), o = P(LX0, DP / 2, top - 0.15 * H), ex = P(LX0 + 1, DP / 2, top - 0.15 * H), ez = P(LX0, DP / 2, top - 0.15 * H + 1);
+  const ls = LW / (C.S * 0.79 * 900), m = [(o[0] - ex[0]) * ls, (o[1] - ex[1]) * ls, (o[0] - ez[0]) * ls, (o[1] - ez[1]) * ls, o[0] + (ex[0] - o[0]) * ls * 900, o[1] + (ex[1] - o[1]) * ls * 900];
+  mk("path", { d: LOGO, transform: `matrix(${m.map((c) => c.toFixed(4)).join(" ")})`, class: "dot logo" }, g);
+
+  const u = spring(UREST, { eps: 0.05 });
+
+  const span = (a, b, n) => Array.from({ length: n + 1 }, (_, k) => a + (b - a) * k / n);
+  const K = hull(span(0, Math.PI / 2, 6).flatMap((f) => span(0, 2 * Math.PI, 36).map((l) => P(BR * Math.cos(f) * Math.cos(l),
+    BR * Math.cos(f) * Math.sin(l), BR * Math.sin(f)))).map(([x, y]) => [x - P(0, 0, 0)[0], y - P(0, 0, 0)[1]]));
+
+  /** One profile across the panel at panel x xl, drawn at world x, only where the bead does not hide it. */
+  function across(x, xl, ux) {
+    if (Math.abs(xl) > CL - E) return "";
+    const ys = [...span(E - CW, CW - E, 60), ...OFF.flatMap((o) => span(yc(xl, o) - BR, yc(xl, o) + BR, 16))].sort((a, b) => a - b);
+    let d = "", on = false;
+    for (const y of ys) {
+      const p = [x, y, CT + bead(xl, y)], vis = !underBead(p, ux);
+      if (vis) d += (on ? "L" : "M") + at(p);
+      on = vis;
+    }
+    return d;
+  }
+
+  function draw() {
+    const ux = u.x, xl = XL - ux;
+    const [cr, ci] = rings(ux - CL, -CW, ux + CL, CW, 2, 1);
+    put(carrier, prism(P, front, cr, ci, 0, CT));
+    // Each run is its centre line swept by a hemisphere, so its outline is the projected centre line pushed out by
+    // the projected hemisphere K: to either side along the normal, and round K's far half at each end.
+    const dot = (p, q) => p[0] * q[0] + p[1] * q[1], supp = (n) => K.reduce((m, p) => (dot(p, n) > dot(m, n) ? p : m));
+    const cap = (c, t, n) => {   // K's boundary from its extreme along n to its extreme along -n, the way round through t
+      const L = K.length, i = K.indexOf(supp(n)), j = K.indexOf(supp(n.map((v) => -v))), dir = dot(K[(i + 1) % L], t) > dot(K[(i + L - 1) % L], t) ? 1 : L - 1;
+      const out = [];
+      for (let k = i; ; k = (k + dir) % L) { out.push([c[0] + K[k][0], c[1] + K[k][1]]); if (k === j) return out; }
+    };
+    BEAD.forEach(([a, b, o], i) => {
+      const c = span(a + BR, b - BR, 48).map((x) => P(ux + x, yc(x, o), CT)), m = c.length - 1;
+      const tn = c.map((_, k) => { const p = c[Math.max(0, k - 1)], q = c[Math.min(m, k + 1)], l = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        return [[(q[0] - p[0]) / l, (q[1] - p[1]) / l], [(p[1] - q[1]) / l, (q[0] - p[0]) / l]]; });
+      const side = (k, sg) => { const s = supp([sg * tn[k][1][0], sg * tn[k][1][1]]); return [c[k][0] + s[0], c[k][1] + s[1]]; };
+      put(runs[i], { sil: poly([...c.map((_, k) => side(k, 1)), ...cap(c[m], tn[m][0], tn[m][1]),
+        ...c.map((_, k) => side(k, -1)).reverse(), ...cap(c[0], tn[0][0].map((v) => -v), tn[0][1].map((v) => -v))]), crease: "" });
+    });
+
+    // The live line and the recorded slices, which ride with the panel.
+    line.setAttribute("d", across(XL, xl, ux));
+    let n = 0, d = "";
+    for (let s = 0; s < slices; s++) {
+      const sx = -CL + (s + 0.5) * (2 * CL) / slices;
+      if (sx < lo || sx > hi) continue;
+      n++;
+      d += across(ux + sx, sx, ux);
+    }
+    trail.setAttribute("d", d);
+    const f = GAPS.filter(([a, b]) => over && b > Math.min(lo, xl) && a < Math.max(hi, xl)).length;   // gaps the line has crossed
+    const now = f ? `${f} gap${f > 1 ? "s" : ""}` : "ok";
+    if (over) read.textContent = `slices ${n} · ${now}`;
+
+    // Rays are drawn only where nothing stands between them and the viewer.
+    const boxes = [...SENSOR, [ux - CL, ux + CL, -CW, CW, 0, CT]], off = (p) => hidden(p, boxes) || underBead(p, ux);
+    const beam = (a, b, m = 40) => Array.from({ length: m + 1 }, (_, k) => a.map((c, i) => c + (b[i] - c) * k / m))
+      .map((p, k, ps) => off(p) ? "" : (k && !off(ps[k - 1]) ? "L" : "M") + at(p)).join("");
+    fan.setAttribute("d", span(E - CW, CW - E, RAYS - 1).map((y) => beam(EM, [XL, y, CT + bead(xl, y)])).join(""));
+    ray.setAttribute("d", beam([XL, yc(xl, OFF[1]), CT + bead(xl, yc(xl, OFF[1]))], CAM));
+  }
+
+  const B = register(stage, (dt) => {
+    const moving = stepS(u, dt);
+    if (over) [lo, hi] = [Math.min(lo, XL - u.x), Math.max(hi, XL - u.x)];
+    return draw(), moving;
+  });
+  bag.add(B.unregister);
+
+  // The hit area is the whole frame, which never moves (rule 01); the pointer's x is the part's place.
+  bag.add(pointer(stage, {
+    move: (p) => {
+      if (!over) { lo = hi = XL - u.x; over = true; }
+      u.t = UMIN + clamp((340 - p[0]) / 280, 0, 1) * (UMAX - UMIN);
+      B.wake();
+    },
+    leave: () => { [over, lo, hi, u.t, read.textContent] = [false, Infinity, -Infinity, UREST, "rest"]; B.wake(); },
+  }));
+  bag.add(() => svg.replaceChildren());
+  draw();
+  read.textContent = "rest";
+
+  return { set: (v) => { slices = Math.round(v); B.wake(); }, destroy: bag.dispose };
+}
+
+hairline({
+  name: "line-laser",
+  means: "A line-laser sensor over a glued panel: the line humps over the glue bead, and sliding the panel records it slice by slice.",
+  rules: [1, 3, 6, 7], range: [6, 10, 16], tour: [[310, 160], [70, 160], [200, 160], null], mount,
+});
+</script>
+</body>
+</html>

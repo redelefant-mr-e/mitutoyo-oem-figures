@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OEM figure</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { display: grid; place-items: center; overflow: hidden; }
+  #host { width: min(100vw, calc(100vh * 1.25)); }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="dist/oem-figures.js"></script>
+<script>
+/* ?f=laser-scan&plate=white|grey|orange|dark&theme=light|dark&intensity=0.5&play=1 */
+(() => {
+  const q = new URLSearchParams(location.search);
+  const names = OEMFigures.list().map((f) => f.name);
+  const name = names.includes(q.get("f")) ? q.get("f") : names[0];
+  const plate = OEMFigures.plates.includes(q.get("plate")) ? q.get("plate") : "white";
+  const theme = ["light", "dark"].includes(q.get("theme")) ? q.get("theme") : undefined;
+  const intensity = Number.isFinite(parseFloat(q.get("intensity"))) ? parseFloat(q.get("intensity")) : 0.5;
+  document.body.style.background = theme === "dark" && plate === "white" ? "#08090a" : OEMFigures.plateColor(plate);
+  document.title = "OEM figure · " + name;
+  OEMFigures.mount(document.getElementById("host"), name, { plate, theme, intensity, play: q.get("play") === "1" });
+})();
+</script>
+</body>
+</html>

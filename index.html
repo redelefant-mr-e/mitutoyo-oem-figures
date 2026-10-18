@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OEM figures</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --ground: #ffffff; --ink: #232327; --muted: #6f6f78; --line: #e0e0e4; }
+  :root[data-plate="dark"] { --ground: #1c1d20; --ink: #f2f2f4; --muted: #9a9ba3; --line: #2e2f34; }
+  :root[data-plate="grey"] { --ground: #e9e9eb; --line: #d3d3d8; }
+  :root[data-plate="orange"] { --ground: #e8742c; --ink: #1d1208; --muted: #5a2e10; --line: #c25f22; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 24px 64px; background: var(--ground); color: var(--ink);
+    font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased;
+    transition: background 260ms; }
+  header { max-width: 1120px; margin: 0 auto 24px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+  h1 { margin: 0; font-size: 20px; font-weight: 500; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  .mono, button, select, output, label { font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  label { color: var(--muted); }
+  button, select { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  input[type="range"] { width: 120px; accent-color: var(--ink); }
+  .grid { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+  .card { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .card .top { display: flex; justify-content: space-between; padding: 12px 14px 0; color: var(--muted); }
+  .card .read { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .card .foot { padding: 0 14px 14px; }
+  .card .means { margin: 0 0 10px; min-height: 3em; }
+  .card .meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; color: var(--muted); }
+  .badge { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; }
+  .badge.ok { border-color: var(--ink); color: var(--ink); }
+  .empty { max-width: 1120px; margin: 40px auto; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>OEM figures</h1>
+    <p>Interactive line figures on the Hairline engine. Point at one; copy its embed, or export its play loop as an MP4.</p>
+  </div>
+  <div class="controls">
+    <label for="collection">collection</label>
+    <select id="collection"><option value="">all</option></select>
+    <label for="plate">plate</label>
+    <select id="plate"><option>white</option><option>grey</option><option>orange</option><option>dark</option></select>
+    <label for="intensity">intensity</label>
+    <input id="intensity" type="range" min="0" max="1" step="0.01" value="0.5">
+    <output id="ival" class="mono">0.50</output>
+    <button id="play" type="button" aria-pressed="false">play</button>
+  </div>
+</header>
+<main class="grid" id="grid"></main>
+<p class="empty" id="empty" hidden>No figure has passed QA yet. Run scripts/oem_figures/build_library.mjs.</p>
+<script src="dist/oem-figures.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  const manifest = OEMFigures.manifest;
+  const mounted = [];
+  const state = { plate: OEMFigures.plates.includes(q.get("plate")) ? q.get("plate") : "white", intensity: 0.5, play: q.get("play") === "1" };
+
+  let server = false;
+
+  const flash = (button, text, label) => {
+    button.textContent = text;
+    setTimeout(() => { button.textContent = label; }, 1600);
+  };
+
+  async function exportLoop(name, button) {
+    const label = "export loop";
+    if (!server) {
+      navigator.clipboard?.writeText(`node scripts/oem_figures/export_loop.mjs ${name} --plate ${state.plate} --intensity ${state.intensity}`);
+      return flash(button, "command copied", label);
+    }
+    button.disabled = true;
+    button.textContent = "exporting…";
+    try {
+      const res = await fetch(`api/export?f=${encodeURIComponent(name)}&plate=${state.plate}&intensity=${state.intensity}`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await res.blob()), download: `${name}-${state.plate}.mp4` });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      flash(button, "saved", label);
+    } catch (e) {
+      button.title = e.message;
+      flash(button, /already exporting/.test(e.message) ? "busy" : "failed", label);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  for (const c of [...new Set(manifest.map((f) => f.collection))]) $("collection").append(new Option(c, c));
+  $("plate").value = state.plate;
+  document.documentElement.dataset.plate = state.plate;
+  $("play").setAttribute("aria-pressed", String(state.play));
+
+  function render() {
+    for (const m of mounted.splice(0)) m.handle.destroy();
+    $("grid").replaceChildren();
+    const want = $("collection").value;
+    const list = manifest.filter((f) => !want || f.collection === want);
+    $("empty").hidden = list.length > 0;
+    for (const f of list) {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.innerHTML = `<div class="top mono"><span>${f.name}</span><span class="read"></span></div><div class="stage"></div>
+        <div class="foot"><p class="means"></p><div class="meta mono">
+        <span class="badge">${f.collection}</span><span class="badge">${f.gesture}</span>
+        <span class="badge ${f.approved ? "ok" : ""}">${f.approved ? "approved" : f.passed ? "qa pass" : "in review"}</span>
+        <a class="mono" href="dist/hairline-${f.name}.html" style="color:inherit">bench</a>
+        <button type="button" class="copy">copy embed</button>
+        <button type="button" class="loop">export loop</button></div></div>`;
+      card.querySelector(".means").textContent = f.means;
+      const readEl = card.querySelector(".read");
+      const handle = OEMFigures.mount(card.querySelector(".stage"), f.name, {
+        plate: state.plate, intensity: state.intensity, play: state.play, onRead: (t) => { readEl.textContent = t; },
+      });
+      card.querySelector(".copy").addEventListener("click", (e) => {
+        const src = new URL(`embed.html?f=${f.name}&plate=${state.plate}&intensity=${state.intensity}${state.play ? "&play=1" : ""}`, location.href).href;
+        navigator.clipboard?.writeText(`<iframe src="${src}" title="${f.means.replace(/"/g, "&quot;")}" style="width:100%;aspect-ratio:5/4;border:0"></iframe>`);
+        e.target.textContent = "copied";
+        setTimeout(() => { e.target.textContent = "copy embed"; }, 1200);
+      });
+      const loop = card.querySelector(".loop");
+      loop.title = server ? "Record one loop of the play tour as an MP4" : "Copy the command that records one loop as an MP4 (or run scripts/oem_figures/serve.mjs to export from here)";
+      loop.addEventListener("click", () => exportLoop(f.name, loop));
+      $("grid").append(card);
+      mounted.push({ handle });
+    }
+  }
+
+  $("collection").addEventListener("change", render);
+  $("plate").addEventListener("change", () => {
+    state.plate = $("plate").value;
+    document.documentElement.dataset.plate = state.plate;
+    for (const m of mounted) m.handle.update({ plate: state.plate });
+  });
+  $("intensity").addEventListener("input", () => {
+    state.intensity = Number($("intensity").value);
+    $("ival").textContent = state.intensity.toFixed(2);
+    for (const m of mounted) m.handle.update({ intensity: state.intensity });
+  });
+  $("play").addEventListener("click", () => {
+    state.play = !state.play;
+    $("play").setAttribute("aria-pressed", String(state.play));
+    for (const m of mounted) m.handle.update({ play: state.play });
+  });
+  fetch("api/status").then((r) => r.ok && r.json()).then((s) => { server = Boolean(s && s.export); }).catch(() => {}).finally(render);
+})();
+</script>
+</body>
+</html>
